@@ -1,13 +1,15 @@
 """Tests offline; FakeProvider là test double, không đánh giá năng lực model."""
+import io
 import json
 import sys
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agent import run_agent
 from status_tools import StatusTools
-from providers import Provider
+from providers import Provider, post_json
 
 
 def tool_call(call_id, name, arguments):
@@ -80,6 +82,32 @@ class LoopTests(unittest.TestCase):
 
 
 class ProviderTests(unittest.TestCase):
+    @patch('providers.time.sleep')
+    @patch('providers.urllib.request.urlopen')
+    def test_post_json_retries_429_and_honors_retry_after(self, urlopen, sleep):
+        rate_limit = urllib.error.HTTPError(
+            'https://example.test', 429, 'Too Many Requests',
+            {'Retry-After': '0'}, io.BytesIO(),
+        )
+        urlopen.side_effect = [rate_limit, io.BytesIO(b'{"ok": true}')]
+
+        self.assertEqual(post_json('https://example.test', {}, {}), {'ok': True})
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(0.0)
+
+    @patch('providers.time.sleep')
+    @patch('providers.urllib.request.urlopen')
+    def test_post_json_stops_after_bounded_429_retries(self, urlopen, sleep):
+        urlopen.side_effect = urllib.error.HTTPError(
+            'https://example.test', 429, 'Too Many Requests',
+            {}, io.BytesIO(),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, 'HTTP 429'):
+            post_json('https://example.test', {}, {})
+        self.assertEqual(urlopen.call_count, 4)
+        self.assertEqual(sleep.call_count, 3)
+
     @patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test'})
     @patch('providers.post_json')
     def test_anthropic_groups_results(self, post):
@@ -119,9 +147,11 @@ class FullTrajectoryTests(unittest.TestCase):
 
     def test_all_provider_adapters_form_requests_without_keys_leaking(self):
         sample = {'choices':[{'message':{'role':'assistant','content':'ok'},'finish_reason':'stop'}], 'usage':{}}
-        for name, key in [('openai','OPENAI_API_KEY'),('gemini','GEMINI_API_KEY'),('openrouter','OPENROUTER_API_KEY')]:
+        for name, key in [('openai','OPENAI_API_KEY'),('gemini','GEMINI_API_KEY'),('openrouter','OPENROUTER_API_KEY'),('groq','GROQ_API_KEY')]:
             with self.subTest(name=name), patch.dict('os.environ', {key:'dummy'}), patch('providers.post_json', return_value=sample) as post:
                 result = Provider(name,'test-model').complete([{'role':'user','content':'hello'}], [])
                 self.assertEqual(result['finish'], 'stop')
                 self.assertEqual(post.call_args.args[2]['model'], 'test-model')
                 self.assertIn('chat/completions', post.call_args.args[0])
+                if name == 'groq':
+                    self.assertEqual(post.call_args.args[1]['User-Agent'], 'ReactLoopAgent/1.0')
