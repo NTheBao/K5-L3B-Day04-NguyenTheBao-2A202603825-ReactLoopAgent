@@ -27,14 +27,14 @@ step 3: final -> Cloudflare Spectrum "Operational"
 
 | Chỉ số | `eval_before.json` | `eval_after.json` |
 |---|---|---|
-| Điểm tổng | 93.41/100 (22/22) | Chưa chạy |
-| Điểm case đã chọn | H7: 37/100 | Chưa chạy |
-| Số model calls | H7: 3 lần gọi agent | Chưa chạy |
-| Token, chi phí nếu có | Xem usage trong file eval; file không ghi chi phí tiền tệ | Chưa chạy |
+| Điểm tổng | 93.41/100 (22/22) | Chưa có eval đầy đủ |
+| Điểm case đã chọn | H7: 37/100 | H7: 97/100 (`eval_groq_h7.json`, 1/1 case) |
+| Số model calls | H7: 3 lần gọi agent | H7: 4 lần agent + 1 lần judge |
+| Token, chi phí nếu có | Xem usage trong file eval; file không ghi chi phí tiền tệ | H7: 4,477 agent tokens + 2,397 judge tokens; không có số tiền chi phí |
 
-- Lỗi đã giải quyết: chưa xác nhận qua eval sau thay đổi; cần chạy lại H7 hoặc toàn bộ bộ eval.
-- Lỗi còn lại hoặc mới xuất hiện: chưa biết cho đến khi chạy eval sau thay đổi.
+- Lỗi đã giải quyết: trong lần chạy riêng H7, trace ghi `validation_missing_status_disclosure` sau khi model bỏ sót timeout; câu trả lời cuối nêu rõ không thể xác minh Cloudflare, và judge chấm 97/100.
+- Lỗi còn lại hoặc mới xuất hiện: chưa biết điểm tổng sau thay đổi vì `eval_after.json` bị 429 và `eval_groq_h7.json` chỉ chứa H7. Không dùng điểm H7 riêng làm điểm toàn bộ. Khi rà soát thủ công, nguồn GitHub trong câu trả lời H7 là đường dẫn giả dạng tool (`/functions.get_status?...`), không phải URL thật `https://www.githubstatus.com` từ tool result; điểm judge 97 không chứng minh mọi chi tiết đều hoàn hảo.
 
 ## 5. Giới hạn
 
-Gate kiểm tra câu trả lời có thông báo provider chưa xác minh, không chứng minh mọi claim khác đều đúng hoặc được dẫn nguồn. Điểm judge là ước lượng trên snapshot cố định; cần đọc trace và chạy lại sau thay đổi. Lần chạy trước đã chấm đủ 22 case nhưng mỗi phiên bản chỉ chạy một lần.
+Gate kiểm tra câu trả lời có thông báo provider chưa xác minh, không chứng minh mọi claim khác đều đúng hoặc được dẫn nguồn. Điểm judge là ước lượng trên snapshot cố định. H7 sau thay đổi được chạy riêng thành công; cần chạy đủ 22 case sau thay đổi để có điểm tổng có thể so sánh với baseline. Lần chạy trước đã chấm đủ 22 case nhưng mỗi phiên bản chỉ chạy một lần.
