@@ -25,16 +25,37 @@ step 3: final -> Cloudflare Spectrum "Operational"
 
 ## 4. So sánh hai lần chạy
 
-| Chỉ số | `eval_before.json` | `eval_after.json` |
-|---|---|---|
-| Điểm tổng | 93.41/100 (22/22) | Chưa có eval đầy đủ |
-| Điểm case đã chọn | H7: 37/100 | H7: 97/100 (`eval_groq_h7.json`, 1/1 case) |
-| Số model calls | H7: 3 lần gọi agent | H7: 4 lần agent + 1 lần judge |
-| Token, chi phí nếu có | Xem usage trong file eval; file không ghi chi phí tiền tệ | H7: 4,477 agent tokens + 2,397 judge tokens; không có số tiền chi phí |
+Hai lần chạy đầy đủ dùng cùng provider/model của agent và judge (`groq` / `openai/gpt-oss-120b`), cùng dataset `core` và `max_steps=8`.
 
-- Lỗi đã giải quyết: trong lần chạy riêng H7, trace ghi `validation_missing_status_disclosure` sau khi model bỏ sót timeout; câu trả lời cuối nêu rõ không thể xác minh Cloudflare, và judge chấm 97/100.
-- Lỗi còn lại hoặc mới xuất hiện: chưa biết điểm tổng sau thay đổi vì `eval_after.json` bị 429 và `eval_groq_h7.json` chỉ chứa H7. Không dùng điểm H7 riêng làm điểm toàn bộ. Khi rà soát thủ công, nguồn GitHub trong câu trả lời H7 là đường dẫn giả dạng tool (`/functions.get_status?...`), không phải URL thật `https://www.githubstatus.com` từ tool result; điểm judge 97 không chứng minh mọi chi tiết đều hoàn hảo.
+| Chỉ số | `eval_before.json` | `eval_after2.json` |
+|---|---:|---:|
+| Điểm tổng | 93.41/100 (22/22) | 94.00/100 (22/22), tăng 0.59 |
+| H7 | 37/100 | 100/100, tăng 63 điểm |
+| Agent model calls / tokens | 70 / 85,677 | 72 / 97,369 |
+| Judge calls / tokens | 22 / 59,951 | 22 / 61,297 |
+| Tổng model calls / tokens | 92 / 145,628 | 94 / 158,666 |
+| Chi phí tiền tệ | Không có trong dữ liệu provider | Không có trong dữ liệu provider |
+
+Điểm từng case (trước → sau, chênh lệch):
+
+| Case | Điểm | Case | Điểm |
+|---|---:|---|---:|
+| E1 | 100 → 99 (-1) | E2 | 95 → 97 (+2) |
+| E3 | 100 → 100 (0) | E4 | 100 → 100 (0) |
+| E5 | 100 → 98 (-2) | E6 | 100 → 95 (-5) |
+| A1 | 100 → 98 (-2) | A2 | 98 → 100 (+2) |
+| A3 | 100 → 100 (0) | A4 | 100 → 100 (0) |
+| A5 | 96 → 94 (-2) | A6 | 100 → 95 (-5) |
+| A7 | 96 → 96 (0) | A8 | 100 → 99 (-1) |
+| H1 | 92 → 97 (+5) | H2 | 100 → 50 (-50) |
+| H3 | 100 → 96 (-4) | H4 | 96 → 94 (-2) |
+| H5 | 95 → 100 (+5) | H6 | 50 → 68 (+18) |
+| H7 | 37 → 100 (+63) | H8 | 100 → 92 (-8) |
+
+- **Lỗi đã giải quyết:** baseline H7 bỏ qua `TimeoutError` rồi kết luận Cloudflare Spectrum đang hoạt động. Ở `eval_after2.json`, trace có event `validation_missing_status_disclosure` sau khi câu trả lời đầu chưa nói rõ giới hạn; lượt sửa cuối nêu không thể xác minh Cloudflare do timeout. Judge chấm 100/100. H7 dùng 4 agent calls + 1 judge call, với 4,477 agent tokens và 2,165 judge tokens.
+- **Lỗi còn lại hoặc điểm giảm:** H2 giảm 100→50 vì agent không gọi tool kiểm tra snapshot hiện tại. H6 tăng 50→68 nhưng judge vẫn nêu câu trả lời chưa đáp ứng rõ yêu cầu về nguyên nhân trong dữ liệu và trạng thái GitHub Actions. E6, A6 và H8 cũng giảm lần lượt 5, 5 và 8 điểm; cần xem grade/trace của từng case nếu tiếp tục cải tiến.
+- `eval_after.json` chỉ chấm được 8/22 case do lỗi HTTP 429; `eval_after1.json` không chấm được case nào vì lỗi 429. Không dùng các lần chạy lỗi hoặc `eval_groq_h7.json` (H7 riêng lẻ) thay cho so sánh toàn bộ; lần chạy đầy đủ sau thay đổi là `eval_after2.json`.
 
 ## 5. Giới hạn
 
-Gate kiểm tra câu trả lời có thông báo provider chưa xác minh, không chứng minh mọi claim khác đều đúng hoặc được dẫn nguồn. Điểm judge là ước lượng trên snapshot cố định. H7 sau thay đổi được chạy riêng thành công; cần chạy đủ 22 case sau thay đổi để có điểm tổng có thể so sánh với baseline. Lần chạy trước đã chấm đủ 22 case nhưng mỗi phiên bản chỉ chạy một lần.
+Gate mới kiểm tra việc thông báo provider chưa xác minh sau lỗi status; không chứng minh mọi claim khác đều đúng hoặc có nguồn. H7 cải thiện rõ, nhưng tổng điểm chỉ tăng 0.59 điểm và một số case khác giảm, nên cần phân tích trace riêng thay vì kết luận rằng agent đã được cải thiện đồng đều. Tổng token và số lần gọi tăng nhẹ; provider không cung cấp chi phí tiền tệ trong các file eval. Agent và judge dùng cùng model nên điểm judge có thể thiên lệch; kết quả còn chịu biến động giữa các lần chạy. Một lần chạy cho mỗi phiên bản không chứng minh độ ổn định.
